@@ -11,7 +11,7 @@
 
 XYRONIX requires zero installation, zero server configurations, and zero package managers. It is hosted directly on the global grid via GitHub Pages.
 
-**🔗 [Access the XYRONIX Interface Here](https://mohitscodiclab.github.io/YOUR-REPO-NAME-HERE)**
+**🔗 [Access the XYRONIX Interface Here](https://mohitscodiclab.github.io/XYRONIX)**
 
 **To Engage Systems:**
 1.  **Initialize:** Click the uplink above to open the matrix in your preferred web terminal (Chrome, Firefox, Edge, Safari).
