@@ -2,8 +2,9 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>XYRONIX — Infinite Canvas</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
   <style>
 /* =============================================
    XYRONIX — Complete Stylesheet
@@ -192,6 +193,9 @@ body {
 .links-section .icon-btn { width: 32px; height: 32px; color: var(--text); opacity: 0.7; }
 .links-section .icon-btn:hover { opacity: 1; color: var(--accent); background: transparent; border-color: transparent; transform: translateY(-2px); }
 
+/* Mobile Panel Toggle */
+.mobile-toggle { display: none; }
+
 /* ══════════════════════════════════
    LEFT PROPERTIES PANEL
 ══════════════════════════════════ */
@@ -294,12 +298,29 @@ body {
 @media (max-width: 768px) {
   :root { --panel-w: 0px; }
   body { grid-template-areas: "toolbar toolbar" "canvas canvas" "status status"; }
-  #props-panel { display: none; }
+  
+  /* Mobile specific toolbar layout */
+  .mobile-toggle { display: flex; }
+  .links-section { display: none; }
   .tool-btn span { display: none; }
   .tool-btn { min-width: 36px; padding: 5px; }
   .brand .logo { font-size: 13px; }
-  .links-section { display: none; }
   #status-hint { display: none; }
+
+  /* Mobile slide-out panel */
+  #props-panel { 
+    position: absolute;
+    left: -220px; 
+    top: var(--toolbar-h);
+    bottom: var(--statusbar-h);
+    width: 200px;
+    z-index: 200;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-lg);
+  }
+  #props-panel.open {
+    left: 0;
+  }
 }
 
 .hidden { display: none !important; }
@@ -312,6 +333,13 @@ body {
     <div class="toolbar-section brand">
       <span class="logo">✦ XYRONIX</span>
     </div>
+
+    <button class="icon-btn mobile-toggle" id="btn-mobile-panel" title="Properties">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
 
     <div class="toolbar-section tools" role="toolbar" aria-label="Drawing tools">
       <button class="tool-btn active" data-tool="select" title="Select · V">
@@ -489,7 +517,7 @@ body {
     <span id="status-tool">Tool: Select</span>
     <span id="status-pos">X: 0  Y: 0</span>
     <span id="status-elements">Elements: 0</span>
-    <span id="status-hint">Ctrl+Z Undo · Ctrl+Y Redo · Del Delete · Space Pan</span>
+    <span id="status-hint">Shift to constrain · 2 Fingers to pan/zoom</span>
   </footer>
 
   <div id="modal-overlay" class="hidden">
@@ -505,7 +533,7 @@ body {
 
 <script>
 /* =====================================================
-   DrawFlow — Canvas Drawing Application
+   XYRONIX — Canvas Drawing Application
    Fully offline, no dependencies, pure vanilla JS
    ===================================================== */
 'use strict';
@@ -517,10 +545,7 @@ body {
 let _idCounter = Date.now();
 const genId = () => `el_${(_idCounter++).toString(36)}`;
 
-/** Lightweight seeded PRNG (Mulberry32) */
-function SeededRandom(seed) {
-  this.s = seed >>> 0;
-}
+function SeededRandom(seed) { this.s = seed >>> 0; }
 SeededRandom.prototype.next = function () {
   this.s |= 0;
   this.s = this.s + 0x6d2b79f5 | 0;
@@ -537,55 +562,34 @@ SeededRandom.prototype.between = function (a, b) {
 // ══════════════════════════════════════════════════════
 
 const STATE = {
-  // All drawn elements (source of truth)
   elements: [],
-
-  // Current active tool
   tool: 'select',
-
-  // Drawing interaction
   isDrawing:   false,
-  currentEl:   null,         // element being actively drawn
-  mouseWorld:  { x: 0, y: 0 }, // current mouse in world coords
-  drawStart:   null,          // world coords where draw started
-
-  // Selection
+  currentEl:   null,
+  mouseWorld:  { x: 0, y: 0 },
+  drawStart:   null,
   selectedIds:    new Set(),
-  selectionBox:   null,       // rubber-band { x,y,w,h }
+  selectionBox:   null,
   isMoving:       false,
-  moveStart:      null,       // world coords at drag start
-  moveOrigins:    null,       // Map<id, {x,y}> of element positions
-
-  // Resize
+  moveStart:      null,
+  moveOrigins:    null,
   isResizing:     false,
-  resizeHandle:   null,       // 'nw'|'n'|'ne'|'e'|'se'|'s'|'sw'|'w'
-  resizeStart:    null,       // { mouseWorld, elBounds }
-
-  // Pan (middle-mouse or space-drag)
+  resizeHandle:   null,
+  resizeStart:    null,
   isPanning:   false,
   panStart:    null,
   spaceDown:   false,
-
-  // Camera
   camera: { x: 0, y: 0, zoom: 1 },
-
-  // Style
   strokeColor:  '#1a1a2e',
   fillColor:    'transparent',
   strokeWidth:  2,
   opacity:      1.0,
   roughness:    1,
   fontSize:     20,
-
-  // UI toggles
   darkMode:     false,
   gridEnabled:  false,
   gridSize:     20,
-
-  // Text editing
   editingId:    null,
-
-  // History (undo/redo)
   history:      [],
   historyIndex: -1,
   MAX_HISTORY:  80,
@@ -596,14 +600,12 @@ const STATE = {
 // ══════════════════════════════════════════════════════
 
 let canvas, ctx;
-
 function initCanvas() {
   canvas = document.getElementById('main-canvas');
   ctx    = canvas.getContext('2d');
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 }
-
 function resizeCanvas() {
   const wrapper = document.getElementById('canvas-wrapper');
   const dpr = window.devicePixelRatio || 1;
@@ -613,7 +615,7 @@ function resizeCanvas() {
   canvas.height = H * dpr;
   canvas.style.width  = W + 'px';
   canvas.style.height = H + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // reset + apply DPR
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   scheduleRender();
 }
 
@@ -623,27 +625,16 @@ function resizeCanvas() {
 
 function screenToWorld(sx, sy) {
   const { x: px, y: py, zoom } = STATE.camera;
-  return {
-    x: (sx - px) / zoom,
-    y: (sy - py) / zoom,
-  };
+  return { x: (sx - px) / zoom, y: (sy - py) / zoom };
 }
-
 function worldToScreen(wx, wy) {
   const { x: px, y: py, zoom } = STATE.camera;
-  return {
-    x: wx * zoom + px,
-    y: wy * zoom + py,
-  };
+  return { x: wx * zoom + px, y: wy * zoom + py };
 }
-
 function getCanvasPos(e) {
   const rect = canvas.getBoundingClientRect();
   const touch = e.touches ? e.touches[0] : e;
-  return {
-    x: touch.clientX - rect.left,
-    y: touch.clientY - rect.top,
-  };
+  return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
 }
 
 // ══════════════════════════════════════════════════════
@@ -654,8 +645,7 @@ function buildRoughRect(x, y, w, h, seed, roughness) {
   const rng = new SeededRandom(seed);
   const r = roughness * 2;
   const cmds = [];
-
-  function addSide(x1, y1, x2, y2, s) {
+  function addSide(x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
     const px = -dy / len, py = dx / len;
@@ -667,14 +657,13 @@ function buildRoughRect(x, y, w, h, seed, roughness) {
     cmds.push({ t: 'M', x: x1 + rng.between(-r, r) * 0.3, y: y1 + rng.between(-r, r) * 0.3 });
     cmds.push({ t: 'Q', cx: mx, cy: my, x: ex, y: ey });
   }
-
   for (let pass = 0; pass < 2; pass++) {
     const ox = rng.between(-r, r) * 0.15 * (pass + 1);
     const oy = rng.between(-r, r) * 0.15 * (pass + 1);
-    addSide(x + ox, y + oy, x + w + ox, y + oy);          
+    addSide(x + ox, y + oy, x + w + ox, y + oy);         
     addSide(x + w + ox, y + oy, x + w + ox, y + h + oy);  
     addSide(x + w + ox, y + h + oy, x + ox, y + h + oy);  
-    addSide(x + ox, y + h + oy, x + ox, y + oy);          
+    addSide(x + ox, y + h + oy, x + ox, y + oy);         
   }
   return cmds;
 }
@@ -686,18 +675,12 @@ function buildRoughEllipse(cx, cy, rx, ry, seed, roughness) {
   const pts = [];
   for (let i = 0; i <= steps; i++) {
     const angle = (i / steps) * Math.PI * 2;
-    pts.push({
-      x: cx + (rx + rng.between(-r, r)) * Math.cos(angle),
-      y: cy + (ry + rng.between(-r, r)) * Math.sin(angle),
-    });
+    pts.push({ x: cx + (rx + rng.between(-r, r)) * Math.cos(angle), y: cy + (ry + rng.between(-r, r)) * Math.sin(angle) });
   }
   const pts2 = [];
   for (let i = 0; i <= steps; i++) {
     const angle = (i / steps) * Math.PI * 2 + rng.between(-0.05, 0.05);
-    pts2.push({
-      x: cx + (rx + rng.between(-r * 0.5, r * 0.5)) * Math.cos(angle),
-      y: cy + (ry + rng.between(-r * 0.5, r * 0.5)) * Math.sin(angle),
-    });
+    pts2.push({ x: cx + (rx + rng.between(-r * 0.5, r * 0.5)) * Math.cos(angle), y: cy + (ry + rng.between(-r * 0.5, r * 0.5)) * Math.sin(angle) });
   }
   return { pts, pts2 };
 }
@@ -708,15 +691,12 @@ function buildRoughLine(x1, y1, x2, y2, seed, roughness) {
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
   const px = -dy / len, py = dx / len;
-  const cp1 = rng.between(-r, r);
-  const cp2 = rng.between(-r, r);
+  const cp1 = rng.between(-r, r), cp2 = rng.between(-r, r);
   return [
     { t: 'M', x: x1 + rng.between(-r*0.3,r*0.3), y: y1 + rng.between(-r*0.3,r*0.3) },
-    { t: 'Q', cx: (x1+x2)/2 + px*cp1, cy: (y1+y2)/2 + py*cp1,
-               x: x2 + rng.between(-r*0.3,r*0.3), y: y2 + rng.between(-r*0.3,r*0.3) },
+    { t: 'Q', cx: (x1+x2)/2 + px*cp1, cy: (y1+y2)/2 + py*cp1, x: x2 + rng.between(-r*0.3,r*0.3), y: y2 + rng.between(-r*0.3,r*0.3) },
     { t: 'M', x: x1 + rng.between(-r*0.2,r*0.2), y: y1 + rng.between(-r*0.2,r*0.2) },
-    { t: 'Q', cx: (x1+x2)/2 + px*cp2*0.5, cy: (y1+y2)/2 + py*cp2*0.5,
-               x: x2 + rng.between(-r*0.2,r*0.2), y: y2 + rng.between(-r*0.2,r*0.2) },
+    { t: 'Q', cx: (x1+x2)/2 + px*cp2*0.5, cy: (y1+y2)/2 + py*cp2*0.5, x: x2 + rng.between(-r*0.2,r*0.2), y: y2 + rng.between(-r*0.2,r*0.2) },
   ];
 }
 
@@ -728,7 +708,6 @@ function replayCmds(ctx, cmds) {
     else if (c.t === 'Q') ctx.quadraticCurveTo(c.cx, c.cy, c.x, c.y);
   }
 }
-
 function replayPts(ctx, pts) {
   if (!pts.length) return;
   ctx.beginPath();
@@ -755,41 +734,27 @@ function makeBase(type, extra = {}) {
     ...extra,
   };
 }
-
 function makeRect(x, y, w, h) { return makeBase('rect', { x, y, width: w, height: h }); }
 function makeCircle(x, y, w, h) { return makeBase('circle', { x, y, width: w, height: h }); }
 function makeLine(x1, y1, x2, y2) { return makeBase('line', { x1, y1, x2, y2 }); }
 function makeArrow(x1, y1, x2, y2) { return makeBase('arrow', { x1, y1, x2, y2 }); }
 function makePencil(pts) { return makeBase('pencil', { points: pts }); }
-function makeText(x, y, text = '') {
-  return makeBase('text', {
-    x, y, text,
-    fontSize:   STATE.fontSize,
-    fontFamily: "'Segoe UI', system-ui, sans-serif",
-  });
-}
+function makeText(x, y, text = '') { return makeBase('text', { x, y, text, fontSize: STATE.fontSize, fontFamily: "'Segoe UI', system-ui, sans-serif" }); }
 function makeImage(x, y, w, h, src) { return makeBase('image', { x, y, width: w, height: h, src }); }
 
 // ══════════════════════════════════════════════════════
-// 7. ELEMENT BOUNDING BOX
+// 7. BOUNDING BOX & RENDERING
 // ══════════════════════════════════════════════════════
 
 function getBounds(el) {
   switch (el.type) {
-    case 'rect':
-    case 'circle':
-    case 'image': {
+    case 'rect': case 'circle': case 'image': {
       const x = el.width  >= 0 ? el.x : el.x + el.width;
       const y = el.height >= 0 ? el.y : el.y + el.height;
-      const w = Math.abs(el.width);
-      const h = Math.abs(el.height);
-      return { x, y, width: w, height: h };
+      return { x, y, width: Math.abs(el.width), height: Math.abs(el.height) };
     }
-    case 'line':
-    case 'arrow': {
-      const x = Math.min(el.x1, el.x2);
-      const y = Math.min(el.y1, el.y2);
-      return { x, y, width: Math.abs(el.x2 - el.x1), height: Math.abs(el.y2 - el.y1) };
+    case 'line': case 'arrow': {
+      return { x: Math.min(el.x1, el.x2), y: Math.min(el.y1, el.y2), width: Math.abs(el.x2 - el.x1), height: Math.abs(el.y2 - el.y1) };
     }
     case 'pencil': {
       if (!el.points.length) return { x: 0, y: 0, width: 0, height: 0 };
@@ -801,29 +766,20 @@ function getBounds(el) {
       return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     }
     case 'text': {
-      ctx.save();
-      ctx.font = `${el.fontSize}px ${el.fontFamily}`;
+      ctx.save(); ctx.font = `${el.fontSize}px ${el.fontFamily}`;
       const lines = (el.text || '').split('\n');
       const w = Math.max(...lines.map(l => ctx.measureText(l).width), 40);
       ctx.restore();
-      const h = (el.fontSize * 1.4) * Math.max(lines.length, 1);
-      return { x: el.x, y: el.y, width: w, height: h };
+      return { x: el.x, y: el.y, width: w, height: (el.fontSize * 1.4) * Math.max(lines.length, 1) };
     }
-    default:
-      return { x: 0, y: 0, width: 0, height: 0 };
+    default: return { x: 0, y: 0, width: 0, height: 0 };
   }
 }
 
-// ══════════════════════════════════════════════════════
-// 8. ELEMENT RENDERING
-// ══════════════════════════════════════════════════════
-
 function getRoughCacheKey(el) {
   switch (el.type) {
-    case 'rect':
-    case 'circle': return `${el.x},${el.y},${el.width},${el.height},${el.roughness}`;
-    case 'line':
-    case 'arrow':  return `${el.x1},${el.y1},${el.x2},${el.y2},${el.roughness}`;
+    case 'rect': case 'circle': return `${el.x},${el.y},${el.width},${el.height},${el.roughness}`;
+    case 'line': case 'arrow':  return `${el.x1},${el.y1},${el.x2},${el.y2},${el.roughness}`;
     default: return '';
   }
 }
@@ -832,16 +788,12 @@ function ensureRough(el) {
   const key = getRoughCacheKey(el);
   if (el._roughKey === key && el._rough) return;
   el._roughKey = key;
-
-  const s = el.seed;
-  const rf = el.roughness;
+  const s = el.seed; const rf = el.roughness;
 
   if (el.type === 'rect') {
-    const b = getBounds(el);
-    el._rough = rf > 0 ? buildRoughRect(b.x, b.y, b.width, b.height, s, rf) : null;
+    const b = getBounds(el); el._rough = rf > 0 ? buildRoughRect(b.x, b.y, b.width, b.height, s, rf) : null;
   } else if (el.type === 'circle') {
-    const b = getBounds(el);
-    el._rough = rf > 0 ? buildRoughEllipse(b.x + b.width/2, b.y + b.height/2, b.width/2, b.height/2, s, rf) : null;
+    const b = getBounds(el); el._rough = rf > 0 ? buildRoughEllipse(b.x + b.width/2, b.y + b.height/2, b.width/2, b.height/2, s, rf) : null;
   } else if (el.type === 'line' || el.type === 'arrow') {
     el._rough = rf > 0 ? buildRoughLine(el.x1, el.y1, el.x2, el.y2, s, rf) : null;
   }
@@ -849,35 +801,23 @@ function ensureRough(el) {
 
 function drawElement(el, isCurrentlyDrawing = false) {
   ctx.save();
-  ctx.globalAlpha = el.opacity;
-  ctx.strokeStyle = el.strokeColor;
+  ctx.globalAlpha = el.opacity; ctx.strokeStyle = el.strokeColor;
   ctx.fillStyle   = el.fillColor === 'transparent' ? 'rgba(0,0,0,0)' : el.fillColor;
-  ctx.lineWidth   = el.strokeWidth;
-  ctx.lineCap     = 'round';
-  ctx.lineJoin    = 'round';
+  ctx.lineWidth   = el.strokeWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
   switch (el.type) {
     case 'image': {
       const b = getBounds(el);
-      if (!el._img) { 
-        el._img = new Image(); 
-        el._img.src = el.src; 
-        el._img.onload = scheduleRender;
-      }
-      if (el._img.complete && el._img.naturalWidth) {
-        ctx.drawImage(el._img, b.x, b.y, b.width, b.height);
-      }
+      if (!el._img) { el._img = new Image(); el._img.src = el.src; el._img.onload = scheduleRender; }
+      if (el._img.complete && el._img.naturalWidth) ctx.drawImage(el._img, b.x, b.y, b.width, b.height);
       break;
     }
     case 'rect': {
       const b = getBounds(el);
       if (el.roughness > 0 && !isCurrentlyDrawing) {
         ensureRough(el);
-        if (el.fillColor !== 'transparent') {
-          ctx.beginPath(); ctx.rect(b.x, b.y, b.width, b.height); ctx.fill();
-        }
-        replayCmds(ctx, el._rough);
-        ctx.stroke();
+        if (el.fillColor !== 'transparent') { ctx.beginPath(); ctx.rect(b.x, b.y, b.width, b.height); ctx.fill(); }
+        replayCmds(ctx, el._rough); ctx.stroke();
       } else {
         ctx.beginPath(); ctx.rect(b.x, b.y, b.width, b.height);
         if (el.fillColor !== 'transparent') ctx.fill();
@@ -886,19 +826,12 @@ function drawElement(el, isCurrentlyDrawing = false) {
       break;
     }
     case 'circle': {
-      const b = getBounds(el);
-      const cx = b.x + b.width / 2;
-      const cy = b.y + b.height / 2;
-      const rx = b.width / 2;
-      const ry = b.height / 2;
-
+      const b = getBounds(el); const cx = b.x + b.width / 2; const cy = b.y + b.height / 2;
+      const rx = b.width / 2; const ry = b.height / 2;
       if (el.roughness > 0 && !isCurrentlyDrawing) {
         ensureRough(el);
-        if (el.fillColor !== 'transparent') {
-          ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-        }
-        replayPts(ctx, el._rough.pts); ctx.stroke();
-        replayPts(ctx, el._rough.pts2); ctx.stroke();
+        if (el.fillColor !== 'transparent') { ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); }
+        replayPts(ctx, el._rough.pts); ctx.stroke(); replayPts(ctx, el._rough.pts2); ctx.stroke();
       } else {
         ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         if (el.fillColor !== 'transparent') ctx.fill();
@@ -909,21 +842,17 @@ function drawElement(el, isCurrentlyDrawing = false) {
     case 'line': {
       if (el.roughness > 0 && !isCurrentlyDrawing) { ensureRough(el); replayCmds(ctx, el._rough); } 
       else { ctx.beginPath(); ctx.moveTo(el.x1, el.y1); ctx.lineTo(el.x2, el.y2); }
-      ctx.stroke();
-      break;
+      ctx.stroke(); break;
     }
     case 'arrow': {
       if (el.roughness > 0 && !isCurrentlyDrawing) { ensureRough(el); replayCmds(ctx, el._rough); } 
       else { ctx.beginPath(); ctx.moveTo(el.x1, el.y1); ctx.lineTo(el.x2, el.y2); }
-      ctx.stroke();
-      drawArrowhead(ctx, el.x1, el.y1, el.x2, el.y2, el.strokeWidth, el.strokeColor, el.roughness > 0, el.seed + 99);
+      ctx.stroke(); drawArrowhead(ctx, el.x1, el.y1, el.x2, el.y2, el.strokeWidth, el.strokeColor, el.roughness > 0, el.seed + 99);
       break;
     }
     case 'pencil': {
       if (el.points.length < 2) {
-        if (el.points.length === 1) {
-          ctx.beginPath(); ctx.arc(el.points[0][0], el.points[0][1], el.strokeWidth / 2, 0, Math.PI * 2); ctx.fillStyle = el.strokeColor; ctx.fill();
-        }
+        if (el.points.length === 1) { ctx.beginPath(); ctx.arc(el.points[0][0], el.points[0][1], el.strokeWidth / 2, 0, Math.PI * 2); ctx.fillStyle = el.strokeColor; ctx.fill(); }
         break;
       }
       ctx.beginPath(); ctx.moveTo(el.points[0][0], el.points[0][1]);
@@ -933,16 +862,12 @@ function drawElement(el, isCurrentlyDrawing = false) {
         ctx.quadraticCurveTo(el.points[i][0], el.points[i][1], mx, my);
       }
       ctx.lineTo(el.points[el.points.length - 1][0], el.points[el.points.length - 1][1]);
-      ctx.stroke();
-      break;
+      ctx.stroke(); break;
     }
     case 'text': {
       if (!el.text) break;
-      ctx.font = `${el.fontSize}px ${el.fontFamily}`;
-      ctx.fillStyle = el.strokeColor;
-      ctx.textBaseline = 'top';
-      const lines = el.text.split('\n');
-      const lineH = el.fontSize * 1.4;
+      ctx.font = `${el.fontSize}px ${el.fontFamily}`; ctx.fillStyle = el.strokeColor; ctx.textBaseline = 'top';
+      const lines = el.text.split('\n'); const lineH = el.fontSize * 1.4;
       lines.forEach((line, i) => ctx.fillText(line, el.x, el.y + i * lineH));
       break;
     }
@@ -951,12 +876,10 @@ function drawElement(el, isCurrentlyDrawing = false) {
 }
 
 function drawArrowhead(ctx, x1, y1, x2, y2, sw, color, rough, seed) {
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const size  = Math.max(12, sw * 3);
+  const angle = Math.atan2(y2 - y1, x2 - x1); const size  = Math.max(12, sw * 3);
   const rng   = rough ? new SeededRandom(seed) : null;
   ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = sw; ctx.lineCap = 'round';
-  const offX = rough ? rng.between(-1.5, 1.5) : 0;
-  const offY = rough ? rng.between(-1.5, 1.5) : 0;
+  const offX = rough ? rng.between(-1.5, 1.5) : 0; const offY = rough ? rng.between(-1.5, 1.5) : 0;
   ctx.beginPath(); ctx.moveTo(x2 + offX, y2 + offY);
   ctx.lineTo(x2 - size * Math.cos(angle - Math.PI / 7) + offX, y2 - size * Math.sin(angle - Math.PI / 7) + offY);
   ctx.moveTo(x2 + offX, y2 + offY);
@@ -965,38 +888,28 @@ function drawArrowhead(ctx, x1, y1, x2, y2, sw, color, rough, seed) {
 }
 
 // ══════════════════════════════════════════════════════
-// 9. HIT TESTING
+// 9. HIT TESTING & HANDLES
 // ══════════════════════════════════════════════════════
 
-function ptInRect(px, py, x, y, w, h, pad = 0) {
-  return px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad;
-}
-
+function ptInRect(px, py, x, y, w, h, pad = 0) { return px >= x - pad && px <= x + w + pad && py >= y - pad && py <= y + h + pad; }
 function distToSegment(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const lenSq = dx * dx + dy * dy;
-  let t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
-  t = Math.max(0, Math.min(1, t));
-  const nx = x1 + t * dx, ny = y1 + t * dy;
-  return Math.sqrt((px - nx) ** 2 + (py - ny) ** 2);
+  const dx = x2 - x1, dy = y2 - y1; const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0; t = Math.max(0, Math.min(1, t));
+  return Math.sqrt((px - (x1 + t * dx)) ** 2 + (py - (y1 + t * dy)) ** 2);
 }
 
 function hitTest(el, wx, wy) {
   const pad = Math.max(6, el.strokeWidth * 0.5);
-
   switch (el.type) {
-    case 'image': {
-      const b = getBounds(el);
-      return ptInRect(wx, wy, b.x, b.y, b.width, b.height, pad);
-    }
+    case 'image': 
+    case 'text': { const b = getBounds(el); return ptInRect(wx, wy, b.x, b.y, b.width, b.height, pad); }
     case 'rect': {
       const b = getBounds(el);
       if (el.fillColor !== 'transparent') return ptInRect(wx, wy, b.x, b.y, b.width, b.height, pad);
       return (ptInRect(wx, wy, b.x, b.y, b.width, b.height, pad) && !ptInRect(wx, wy, b.x + pad, b.y + pad, b.width - pad*2, b.height - pad*2, 0));
     }
     case 'circle': {
-      const b = getBounds(el);
-      const cx = b.x + b.width / 2; const cy = b.y + b.height / 2;
+      const b = getBounds(el); const cx = b.x + b.width / 2; const cy = b.y + b.height / 2;
       const rx = b.width / 2; const ry = b.height / 2;
       const nx = (wx - cx) / (rx + pad); const ny = (wy - cy) / (ry + pad);
       if (nx * nx + ny * ny > 1) return false;
@@ -1004,61 +917,40 @@ function hitTest(el, wx, wy) {
       const nx2 = (wx - cx) / Math.max(rx - pad, 1); const ny2 = (wy - cy) / Math.max(ry - pad, 1);
       return nx2 * nx2 + ny2 * ny2 >= 1;
     }
-    case 'line':
-    case 'arrow':
-      return distToSegment(wx, wy, el.x1, el.y1, el.x2, el.y2) <= pad + 4;
+    case 'line': case 'arrow': return distToSegment(wx, wy, el.x1, el.y1, el.x2, el.y2) <= pad + 4;
     case 'pencil': {
-      if (el.points.length < 2) {
-        if (!el.points.length) return false;
-        return Math.hypot(wx - el.points[0][0], wy - el.points[0][1]) <= pad + 4;
-      }
+      if (el.points.length < 2) return el.points.length ? Math.hypot(wx - el.points[0][0], wy - el.points[0][1]) <= pad + 4 : false;
       for (let i = 0; i < el.points.length - 1; i++) {
         if (distToSegment(wx, wy, el.points[i][0], el.points[i][1], el.points[i+1][0], el.points[i+1][1]) <= pad + 4) return true;
       }
       return false;
-    }
-    case 'text': {
-      const b = getBounds(el);
-      return ptInRect(wx, wy, b.x, b.y, b.width, b.height, pad);
     }
   }
   return false;
 }
 
 function findElement(wx, wy) {
-  for (let i = STATE.elements.length - 1; i >= 0; i--) {
-    if (hitTest(STATE.elements[i], wx, wy)) return STATE.elements[i];
-  }
+  for (let i = STATE.elements.length - 1; i >= 0; i--) { if (hitTest(STATE.elements[i], wx, wy)) return STATE.elements[i]; }
   return null;
 }
-
 function findElementsInRect(rx, ry, rw, rh) {
-  const x1 = rx, y1 = ry, x2 = rx + rw, y2 = ry + rh;
   return STATE.elements.filter(el => {
-    const b = getBounds(el);
-    return b.x + b.width >= x1 && b.x <= x2 && b.y + b.height >= y1 && b.y <= y2;
+    const b = getBounds(el); return b.x + b.width >= rx && b.x <= rx + rw && b.y + b.height >= ry && b.y <= ry + rh;
   });
 }
 
-// ══════════════════════════════════════════════════════
-// 10. RESIZE HANDLES
-// ══════════════════════════════════════════════════════
-
 const HANDLE_SIZE = 8;
-
 function getSelectionBounds() {
   if (!STATE.selectedIds.size) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const id of STATE.selectedIds) {
-    const el = STATE.elements.find(e => e.id === id);
-    if (!el) continue;
+    const el = STATE.elements.find(e => e.id === id); if (!el) continue;
     const b = getBounds(el);
     if (b.x < minX) minX = b.x; if (b.y < minY) minY = b.y;
     if (b.x + b.width > maxX) maxX = b.x + b.width; if (b.y + b.height > maxY) maxY = b.y + b.height;
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
-
 function getHandles(bounds) {
   const { x, y, width: w, height: h } = bounds;
   return [
@@ -1068,10 +960,8 @@ function getHandles(bounds) {
     { name: 'sw', wx: x,       wy: y + h   }, { name: 'w',  wx: x,       wy: y + h/2 },
   ];
 }
-
 function hitHandle(sx, sy) {
-  const bounds = getSelectionBounds();
-  if (!bounds) return null;
+  const bounds = getSelectionBounds(); if (!bounds) return null;
   const handles = getHandles(bounds);
   for (const h of handles) {
     const sp = worldToScreen(h.wx, h.wy);
@@ -1079,14 +969,10 @@ function hitHandle(sx, sy) {
   }
   return null;
 }
-
-const HANDLE_CURSORS = {
-  nw: 'nw-resize', n: 'n-resize', ne: 'ne-resize', e: 'e-resize', 
-  se: 'se-resize', s: 's-resize', sw: 'sw-resize', w: 'w-resize',
-};
+const HANDLE_CURSORS = { nw: 'nw-resize', n: 'n-resize', ne: 'ne-resize', e: 'e-resize', se: 'se-resize', s: 's-resize', sw: 'sw-resize', w: 'w-resize' };
 
 // ══════════════════════════════════════════════════════
-// 11. MAIN RENDER LOOP
+// 10. MAIN RENDER LOOP
 // ══════════════════════════════════════════════════════
 
 let _rafId = null;
@@ -1096,38 +982,29 @@ function scheduleRender() {
 }
 
 function render() {
-  const W = canvas.clientWidth;
-  const H = canvas.clientHeight;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
   const { x: camX, y: camY, zoom } = STATE.camera;
 
   ctx.clearRect(0, 0, W, H);
-  const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--canvas-bg').trim();
-  ctx.fillStyle = bgColor || '#faf8f4';
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--canvas-bg').trim() || '#faf8f4';
   ctx.fillRect(0, 0, W, H);
 
   if (STATE.gridEnabled) drawGrid(W, H, camX, camY, zoom);
 
-  ctx.save();
-  ctx.translate(camX, camY);
-  ctx.scale(zoom, zoom);
+  ctx.save(); ctx.translate(camX, camY); ctx.scale(zoom, zoom);
 
-  for (const el of STATE.elements) { drawElement(el, false); }
-  if (STATE.currentEl) { drawElement(STATE.currentEl, true); }
+  for (const el of STATE.elements) drawElement(el, false);
+  if (STATE.currentEl) drawElement(STATE.currentEl, true);
 
   if (STATE.selectionBox) {
     const sb = STATE.selectionBox;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(91,108,249,0.8)'; ctx.fillStyle = 'rgba(91,108,249,0.07)';
+    ctx.save(); ctx.strokeStyle = 'rgba(91,108,249,0.8)'; ctx.fillStyle = 'rgba(91,108,249,0.07)';
     ctx.lineWidth = 1 / zoom; ctx.setLineDash([4 / zoom, 4 / zoom]);
-    ctx.beginPath(); ctx.rect(sb.x, sb.y, sb.width, sb.height); ctx.fill(); ctx.stroke();
-    ctx.restore();
+    ctx.beginPath(); ctx.rect(sb.x, sb.y, sb.width, sb.height); ctx.fill(); ctx.stroke(); ctx.restore();
   }
-
   ctx.restore(); 
 
-  if (STATE.selectedIds.size > 0 && STATE.tool === 'select') {
-    drawSelectionHandles();
-  }
+  if (STATE.selectedIds.size > 0 && STATE.tool === 'select') drawSelectionHandles();
   updateStatus();
 }
 
@@ -1135,36 +1012,18 @@ function drawGrid(W, H, camX, camY, zoom) {
   const gridSize = STATE.gridSize * zoom;
   const offsetX  = ((camX % gridSize) + gridSize) % gridSize;
   const offsetY  = ((camY % gridSize) + gridSize) % gridSize;
-
-  ctx.save();
-  ctx.strokeStyle = STATE.darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
-  ctx.lineWidth   = 1;
-  
-  // Render grid lines
+  ctx.save(); ctx.strokeStyle = STATE.darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)'; ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let gx = offsetX; gx < W; gx += gridSize) {
-    ctx.moveTo(gx, 0); ctx.lineTo(gx, H);
-  }
-  for (let gy = offsetY; gy < H; gy += gridSize) {
-    ctx.moveTo(0, gy); ctx.lineTo(W, gy);
-  }
-  ctx.stroke();
-  ctx.restore();
+  for (let gx = offsetX; gx < W; gx += gridSize) { ctx.moveTo(gx, 0); ctx.lineTo(gx, H); }
+  for (let gy = offsetY; gy < H; gy += gridSize) { ctx.moveTo(0, gy); ctx.lineTo(W, gy); }
+  ctx.stroke(); ctx.restore();
 }
 
 function drawSelectionHandles() {
-  const bounds = getSelectionBounds();
-  if (!bounds) return;
-
-  const { x: camX, y: camY, zoom } = STATE.camera;
-  const sp1 = worldToScreen(bounds.x, bounds.y);
-  const sp2 = worldToScreen(bounds.x + bounds.width, bounds.y + bounds.height);
-
-  ctx.save();
-  ctx.strokeStyle = 'rgba(91,108,249,0.6)'; ctx.lineWidth = 1; ctx.setLineDash([5, 3]);
-  ctx.strokeRect(sp1.x, sp1.y, sp2.x - sp1.x, sp2.y - sp1.y);
-  ctx.setLineDash([]);
-
+  const bounds = getSelectionBounds(); if (!bounds) return;
+  const sp1 = worldToScreen(bounds.x, bounds.y), sp2 = worldToScreen(bounds.x + bounds.width, bounds.y + bounds.height);
+  ctx.save(); ctx.strokeStyle = 'rgba(91,108,249,0.6)'; ctx.lineWidth = 1; ctx.setLineDash([5, 3]);
+  ctx.strokeRect(sp1.x, sp1.y, sp2.x - sp1.x, sp2.y - sp1.y); ctx.setLineDash([]);
   const handles = getHandles(bounds);
   for (const h of handles) {
     const sp = worldToScreen(h.wx, h.wy);
@@ -1176,66 +1035,47 @@ function drawSelectionHandles() {
 }
 
 // ══════════════════════════════════════════════════════
-// 12. HISTORY SYSTEM
+// 11. HISTORY SYSTEM
 // ══════════════════════════════════════════════════════
 
 function snapshot() {
-  return JSON.stringify(STATE.elements.map(el => {
-    const clone = { ...el };
-    delete clone._rough; delete clone._roughKey; delete clone._img;
-    return clone;
-  }));
+  return JSON.stringify(STATE.elements.map(el => { const clone = { ...el }; delete clone._rough; delete clone._roughKey; delete clone._img; return clone; }));
 }
-
 function pushHistory() {
-  STATE.history.splice(STATE.historyIndex + 1);
-  STATE.history.push(snapshot());
-  if (STATE.history.length > STATE.MAX_HISTORY) STATE.history.shift();
-  else STATE.historyIndex++;
-  updateUndoRedoBtns();
-  autoSave();
+  STATE.history.splice(STATE.historyIndex + 1); STATE.history.push(snapshot());
+  if (STATE.history.length > STATE.MAX_HISTORY) STATE.history.shift(); else STATE.historyIndex++;
+  updateUndoRedoBtns(); autoSave();
 }
-
 function undo() {
   if (STATE.historyIndex <= 0) return;
-  STATE.historyIndex--;
-  restoreSnapshot(STATE.history[STATE.historyIndex]);
-  STATE.selectedIds.clear();
-  scheduleRender();
-  updateUndoRedoBtns();
-  autoSave();
+  STATE.historyIndex--; restoreSnapshot(STATE.history[STATE.historyIndex]);
+  STATE.selectedIds.clear(); scheduleRender(); updateUndoRedoBtns(); autoSave();
 }
-
 function redo() {
   if (STATE.historyIndex >= STATE.history.length - 1) return;
-  STATE.historyIndex++;
-  restoreSnapshot(STATE.history[STATE.historyIndex]);
-  STATE.selectedIds.clear();
-  scheduleRender();
-  updateUndoRedoBtns();
-  autoSave();
+  STATE.historyIndex++; restoreSnapshot(STATE.history[STATE.historyIndex]);
+  STATE.selectedIds.clear(); scheduleRender(); updateUndoRedoBtns(); autoSave();
 }
-
 function restoreSnapshot(snap) {
-  STATE.elements = JSON.parse(snap);
-  STATE.elements.forEach(el => { delete el._rough; delete el._roughKey; });
+  STATE.elements = JSON.parse(snap); STATE.elements.forEach(el => { delete el._rough; delete el._roughKey; });
 }
-
 function updateUndoRedoBtns() {
   document.getElementById('btn-undo').disabled = STATE.historyIndex <= 0;
   document.getElementById('btn-redo').disabled = STATE.historyIndex >= STATE.history.length - 1;
 }
 
 // ══════════════════════════════════════════════════════
-// 13. RESIZE ELEMENT LOGIC
+// 12. PROPORTIONAL RESIZE LOGIC (Feature added)
 // ══════════════════════════════════════════════════════
 
-function applyResize(dx, dy) {
+function applyResize(dx, dy, maintainAspect = false) {
   if (!STATE.resizeStart) return;
   const { handle, elSnapshots, selBounds } = STATE.resizeStart;
   const { x: ox, y: oy, width: ow, height: oh } = selBounds;
 
   let nx = ox, ny = oy, nw = ow, nh = oh;
+
+  // Basic unconstrained calculation
   switch (handle) {
     case 'se': nw = Math.max(4, ow + dx); nh = Math.max(4, oh + dy); break;
     case 'sw': nx = ox + dx; nw = Math.max(4, ow - dx); nh = Math.max(4, oh + dy); break;
@@ -1247,104 +1087,102 @@ function applyResize(dx, dy) {
     case 'n':  ny = oy + dy; nh = Math.max(4, oh - dy); break;
   }
 
+  // Enforce aspect ratio logic if shift is pressed
+  if (maintainAspect && ow > 0 && oh > 0) {
+    const aspect = ow / oh;
+    if (handle === 'e' || handle === 'w') {
+      nh = nw / aspect;
+      ny = oy + (oh - nh) / 2; // Keep vertically centered
+    } else if (handle === 's' || handle === 'n') {
+      nw = nh * aspect;
+      nx = ox + (ow - nw) / 2; // Keep horizontally centered
+    } else {
+      // Corner points - scale proportionally by the largest change
+      const scale = Math.max(nw / ow, nh / oh);
+      nw = ow * scale;
+      nh = oh * scale;
+    }
+    // Readjust offsets for top/left handles when locked
+    if (handle.includes('w')) nx = ox + (ow - nw);
+    if (handle.includes('n')) ny = oy + (oh - nh);
+  }
+
   const scaleX = nw / ow; const scaleY = nh / oh;
 
   for (const [id, snap] of elSnapshots) {
-    const el = STATE.elements.find(e => e.id === id);
-    if (!el) continue;
+    const el = STATE.elements.find(e => e.id === id); if (!el) continue;
 
     if (el.type === 'rect' || el.type === 'circle' || el.type === 'image') {
-      el.x = nx + (snap.x - ox) * scaleX;
-      el.y = ny + (snap.y - oy) * scaleY;
-      el.width  = snap.width  * scaleX;
-      el.height = snap.height * scaleY;
+      el.x = nx + (snap.x - ox) * scaleX; el.y = ny + (snap.y - oy) * scaleY;
+      el.width  = snap.width  * scaleX; el.height = snap.height * scaleY;
       delete el._rough; delete el._roughKey;
     } else if (el.type === 'line' || el.type === 'arrow') {
-      el.x1 = nx + (snap.x1 - ox) * scaleX;
-      el.y1 = ny + (snap.y1 - oy) * scaleY;
-      el.x2 = nx + (snap.x2 - ox) * scaleX;
-      el.y2 = ny + (snap.y2 - oy) * scaleY;
+      el.x1 = nx + (snap.x1 - ox) * scaleX; el.y1 = ny + (snap.y1 - oy) * scaleY;
+      el.x2 = nx + (snap.x2 - ox) * scaleX; el.y2 = ny + (snap.y2 - oy) * scaleY;
       delete el._rough; delete el._roughKey;
     } else if (el.type === 'pencil') {
       el.points = snap.points.map(([px, py]) => [nx + (px - ox) * scaleX, ny + (py - oy) * scaleY]);
     } else if (el.type === 'text') {
-      el.x = nx + (snap.x - ox) * scaleX;
-      el.y = ny + (snap.y - oy) * scaleY;
+      el.x = nx + (snap.x - ox) * scaleX; el.y = ny + (snap.y - oy) * scaleY;
     }
   }
 }
 
 // ══════════════════════════════════════════════════════
-// 14. MOUSE / TOUCH EVENT HANDLERS
+// 13. MOUSE / TOUCH EVENT HANDLERS
 // ══════════════════════════════════════════════════════
 
 function onMouseDown(e) {
   if (e.button === 1) { startPan(e); return; }
-  if (e.button !== 0) return;
+  if (e.button !== 0 && e.button !== undefined) return;
 
   commitTextEdit();
+  
+  // Close mobile panel on interaction
+  document.getElementById('props-panel').classList.remove('open');
 
-  const sp = getCanvasPos(e);
-  const wp = screenToWorld(sp.x, sp.y);
-  STATE.mouseWorld = wp;
+  const sp = getCanvasPos(e); const wp = screenToWorld(sp.x, sp.y); STATE.mouseWorld = wp;
 
   if (STATE.spaceDown) { startPan(e); return; }
 
   const tool = STATE.tool;
-
-  // --- SELECT TOOL ---
   if (tool === 'select') {
     const handle = hitHandle(sp.x, sp.y);
     if (handle && STATE.selectedIds.size > 0) { startResize(handle, wp); return; }
-
     const hit = findElement(wp.x, wp.y);
     if (hit) {
       if (!e.shiftKey && !STATE.selectedIds.has(hit.id)) STATE.selectedIds.clear();
-      STATE.selectedIds.add(hit.id);
-      startMove(wp);
+      STATE.selectedIds.add(hit.id); startMove(wp);
     } else {
       if (!e.shiftKey) STATE.selectedIds.clear();
       startRubberBand(wp);
     }
-    scheduleRender();
-    return;
+    scheduleRender(); return;
   }
 
-  // --- BUCKET (FILL) TOOL ---
   if (tool === 'bucket') {
     const hit = findElement(wp.x, wp.y);
     if (hit && hit.type !== 'line' && hit.type !== 'pencil' && hit.type !== 'arrow' && hit.type !== 'image') {
-      hit.fillColor = STATE.fillColor;
-      delete hit._rough; delete hit._roughKey; // clear rough cache
-      pushHistory();
-      scheduleRender();
+      hit.fillColor = STATE.fillColor; delete hit._rough; delete hit._roughKey;
+      pushHistory(); scheduleRender();
     }
     return;
   }
 
-  // --- TEXT TOOL ---
   if (tool === 'text') {
     const hit = findElement(wp.x, wp.y);
     if (hit && hit.type === 'text') {
-      STATE.selectedIds.clear(); STATE.selectedIds.add(hit.id);
-      beginTextEdit(hit, sp);
+      STATE.selectedIds.clear(); STATE.selectedIds.add(hit.id); beginTextEdit(hit, sp);
     } else {
-      const el = makeText(wp.x, wp.y);
-      STATE.elements.push(el); pushHistory();
-      STATE.selectedIds.clear(); STATE.selectedIds.add(el.id);
-      beginTextEdit(el, sp);
+      const el = makeText(wp.x, wp.y); STATE.elements.push(el); pushHistory();
+      STATE.selectedIds.clear(); STATE.selectedIds.add(el.id); beginTextEdit(el, sp);
     }
-    scheduleRender();
-    return;
+    scheduleRender(); return;
   }
 
-  // --- ERASER TOOL ---
   if (tool === 'eraser') { eraseAt(wp.x, wp.y); STATE.isDrawing = true; return; }
 
-  // --- DRAWING TOOLS ---
-  STATE.isDrawing = true;
-  STATE.drawStart = { x: wp.x, y: wp.y };
-
+  STATE.isDrawing = true; STATE.drawStart = { x: wp.x, y: wp.y };
   switch (tool) {
     case 'pencil': STATE.currentEl = makePencil([[wp.x, wp.y]]); break;
     case 'rect':   STATE.currentEl = makeRect(wp.x, wp.y, 0, 0); break;
@@ -1356,9 +1194,7 @@ function onMouseDown(e) {
 }
 
 function onMouseMove(e) {
-  const sp = getCanvasPos(e);
-  const wp = screenToWorld(sp.x, sp.y);
-  STATE.mouseWorld = wp;
+  const sp = getCanvasPos(e); const wp = screenToWorld(sp.x, sp.y); STATE.mouseWorld = wp;
 
   updateCursorStyle(sp.x, sp.y, wp.x, wp.y);
   updateStatusPos(wp.x, wp.y);
@@ -1373,19 +1209,16 @@ function onMouseMove(e) {
 
   if (STATE.isResizing) {
     const dx = wp.x - STATE.resizeStart.mouseWorld.x; const dy = wp.y - STATE.resizeStart.mouseWorld.y;
-    applyResize(dx, dy); scheduleRender(); return;
+    applyResize(dx, dy, e.shiftKey); // Passes Shift key status
+    scheduleRender(); return;
   }
 
   if (STATE.isMoving) {
     const dx = wp.x - STATE.moveStart.x; const dy = wp.y - STATE.moveStart.y;
     for (const [id, origin] of STATE.moveOrigins) {
-      const el = STATE.elements.find(e => e.id === id);
-      if (!el) continue;
+      const el = STATE.elements.find(e => e.id === id); if (!el) continue;
       if ('x' in el) { el.x = origin.x + dx; el.y = origin.y + dy; }
-      if ('x1' in el) {
-        el.x1 = origin.x1 + dx; el.y1 = origin.y1 + dy;
-        el.x2 = origin.x2 + dx; el.y2 = origin.y2 + dy;
-      }
+      if ('x1' in el) { el.x1 = origin.x1 + dx; el.y1 = origin.y1 + dy; el.x2 = origin.x2 + dx; el.y2 = origin.y2 + dy; }
       if (el.type === 'pencil') el.points = origin.points.map(([px, py]) => [px + dx, py + dy]);
       delete el._rough; delete el._roughKey;
     }
@@ -1394,10 +1227,7 @@ function onMouseMove(e) {
 
   if (STATE.tool === 'select' && STATE.selectionBox !== null) {
     const sx0 = STATE.selectionBox._start.x; const sy0 = STATE.selectionBox._start.y;
-    STATE.selectionBox = {
-      _start: { x: sx0, y: sy0 }, x: Math.min(sx0, wp.x), y: Math.min(sy0, wp.y),
-      width:  Math.abs(wp.x - sx0), height: Math.abs(wp.y - sy0),
-    };
+    STATE.selectionBox = { _start: { x: sx0, y: sy0 }, x: Math.min(sx0, wp.x), y: Math.min(sy0, wp.y), width: Math.abs(wp.x - sx0), height: Math.abs(wp.y - sy0) };
     scheduleRender(); return;
   }
 
@@ -1405,21 +1235,17 @@ function onMouseMove(e) {
 
   if (!STATE.currentEl) return;
   const ds = STATE.drawStart;
-
-  let ex = STATE.gridEnabled ? snapToGrid(wp.x) : wp.x;
-  let ey = STATE.gridEnabled ? snapToGrid(wp.y) : wp.y;
+  let ex = STATE.gridEnabled ? snapToGrid(wp.x) : wp.x; let ey = STATE.gridEnabled ? snapToGrid(wp.y) : wp.y;
   if (e.shiftKey) { ex = ds.x + (wp.x - ds.x); ey = ds.y + (ex - ds.x) * Math.sign(wp.y - ds.y); }
 
   switch (STATE.currentEl.type) {
     case 'pencil': STATE.currentEl.points.push([wp.x, wp.y]); break;
-    case 'rect':
-    case 'circle':
+    case 'rect': case 'circle':
       STATE.currentEl.x = ds.x; STATE.currentEl.y = ds.y;
       STATE.currentEl.width  = (e.shiftKey ? Math.max(wp.x - ds.x, wp.y - ds.y) : wp.x - ds.x);
       STATE.currentEl.height = (e.shiftKey ? Math.max(wp.x - ds.x, wp.y - ds.y) : wp.y - ds.y);
       break;
-    case 'line':
-    case 'arrow':
+    case 'line': case 'arrow':
       STATE.currentEl.x2 = e.shiftKey ? snapAngle(ds.x, ds.y, wp.x, wp.y).x : wp.x;
       STATE.currentEl.y2 = e.shiftKey ? snapAngle(ds.x, ds.y, wp.x, wp.y).y : wp.y;
       break;
@@ -1429,10 +1255,9 @@ function onMouseMove(e) {
 
 function onMouseUp(e) {
   if (e.button === 1) { stopPan(); return; }
-  if (e.button !== 0) return;
+  if (e.button !== 0 && e.button !== undefined) return;
 
   if (STATE.isPanning) { stopPan(); return; }
-
   if (STATE.isResizing) { STATE.isResizing = false; STATE.resizeStart = null; pushHistory(); scheduleRender(); return; }
   if (STATE.isMoving) { STATE.isMoving = false; STATE.moveStart = null; STATE.moveOrigins = null; pushHistory(); scheduleRender(); return; }
 
@@ -1448,9 +1273,7 @@ function onMouseUp(e) {
   if (STATE.tool === 'eraser') { STATE.isDrawing = false; return; }
 
   if (STATE.isDrawing && STATE.currentEl) {
-    const el = STATE.currentEl;
-    let valid = true;
-
+    const el = STATE.currentEl; let valid = true;
     if (el.type === 'rect' || el.type === 'circle') valid = Math.abs(el.width) > 2 || Math.abs(el.height) > 2;
     else if (el.type === 'line' || el.type === 'arrow') valid = Math.hypot(el.x2 - el.x1, el.y2 - el.y1) > 2;
     else if (el.type === 'pencil') valid = el.points.length >= 2;
@@ -1460,27 +1283,19 @@ function onMouseUp(e) {
   }
 }
 
-function onWheel(e) {
-  e.preventDefault();
-  const sp = getCanvasPos(e);
-  const delta = e.deltaY > 0 ? 0.92 : 1.0 / 0.92;
-  zoomAt(sp.x, sp.y, delta);
-}
+function onWheel(e) { e.preventDefault(); const sp = getCanvasPos(e); zoomAt(sp.x, sp.y, e.deltaY > 0 ? 0.92 : 1.0 / 0.92); }
 
 function startPan(e) {
-  STATE.isPanning = true;
-  const sp = getCanvasPos(e);
+  STATE.isPanning = true; const sp = getCanvasPos(e);
   STATE.panStart = { sx: sp.x, sy: sp.y, cx: STATE.camera.x, cy: STATE.camera.y };
   canvas.classList.add('cursor-grabbing');
 }
 function stopPan() { STATE.isPanning = false; STATE.panStart = null; canvas.classList.remove('cursor-grabbing'); }
 
 function startMove(wp) {
-  STATE.isMoving = true; STATE.moveStart = { x: wp.x, y: wp.y };
-  STATE.moveOrigins = new Map();
+  STATE.isMoving = true; STATE.moveStart = { x: wp.x, y: wp.y }; STATE.moveOrigins = new Map();
   for (const id of STATE.selectedIds) {
-    const el = STATE.elements.find(e => e.id === id);
-    if (!el) continue;
+    const el = STATE.elements.find(e => e.id === id); if (!el) continue;
     if (el.type === 'pencil') STATE.moveOrigins.set(id, { points: el.points.map(p => [...p]) });
     else if (el.type === 'line' || el.type === 'arrow') STATE.moveOrigins.set(id, { x1: el.x1, y1: el.y1, x2: el.x2, y2: el.y2 });
     else STATE.moveOrigins.set(id, { x: el.x, y: el.y, width: el.width, height: el.height });
@@ -1489,63 +1304,22 @@ function startMove(wp) {
 
 function startResize(handle, wp) {
   STATE.isResizing = true; STATE.resizeHandle = handle;
-  const selBounds = getSelectionBounds();
-  const elSnapshots = new Map();
+  const selBounds = getSelectionBounds(); const elSnapshots = new Map();
   for (const id of STATE.selectedIds) {
-    const el = STATE.elements.find(e => e.id === id);
-    if (!el) continue;
+    const el = STATE.elements.find(e => e.id === id); if (!el) continue;
     elSnapshots.set(id, JSON.parse(JSON.stringify(el)));
   }
   STATE.resizeStart = { handle, mouseWorld: wp, elSnapshots, selBounds };
 }
 
 function startRubberBand(wp) { STATE.selectionBox = { _start: { x: wp.x, y: wp.y }, x: wp.x, y: wp.y, width: 0, height: 0 }; }
-
 function eraseAt(wx, wy) {
-  const before = STATE.elements.length;
-  STATE.elements = STATE.elements.filter(el => !hitTest(el, wx, wy));
+  const before = STATE.elements.length; STATE.elements = STATE.elements.filter(el => !hitTest(el, wx, wy));
   if (STATE.elements.length !== before) { scheduleRender(); pushHistory(); }
 }
 
 // ══════════════════════════════════════════════════════
-// 15. TEXT EDITING
-// ══════════════════════════════════════════════════════
-
-const textCursor  = () => document.getElementById('text-cursor');
-const textInputEl = () => document.getElementById('text-input');
-
-function beginTextEdit(el, screenPos) {
-  STATE.editingId = el.id;
-  const tc = textCursor(); const ti = textInputEl();
-
-  tc.style.display = 'block'; tc.style.left = screenPos.x + 'px'; tc.style.top = screenPos.y + 'px';
-  ti.style.fontSize = (el.fontSize * STATE.camera.zoom) + 'px';
-  ti.style.color = el.strokeColor; ti.style.fontFamily = el.fontFamily;
-  ti.value = el.text || '';
-  
-  setTimeout(() => { ti.focus(); ti.select(); }, 10);
-  autoResizeTextarea(ti);
-}
-
-function commitTextEdit() {
-  if (!STATE.editingId) return;
-  const ti = textInputEl();
-  const el = STATE.elements.find(e => e.id === STATE.editingId);
-  if (el) {
-    el.text = ti.value;
-    if (!el.text.trim()) STATE.elements = STATE.elements.filter(e => e.id !== el.id);
-    pushHistory();
-  }
-  textCursor().style.display = 'none'; STATE.editingId = null; scheduleRender();
-}
-
-function autoResizeTextarea(ta) {
-  ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
-  ta.style.width  = 'auto'; ta.style.width  = Math.max(ta.scrollWidth, 100) + 'px';
-}
-
-// ══════════════════════════════════════════════════════
-// 16. ZOOM
+// 14. ZOOM & CAMERA UTILS
 // ══════════════════════════════════════════════════════
 
 const MIN_ZOOM = 0.05, MAX_ZOOM = 20;
@@ -1562,20 +1336,7 @@ function zoomAt(sx, sy, factor) {
 function setZoom(level) { zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, level / STATE.camera.zoom); }
 
 // ══════════════════════════════════════════════════════
-// 17. SNAP UTILITIES
-// ══════════════════════════════════════════════════════
-
-function snapToGrid(v) { return Math.round(v / STATE.gridSize) * STATE.gridSize; }
-
-function snapAngle(x1, y1, x2, y2) {
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const snap = Math.PI / 4; const snapped = Math.round(angle / snap) * snap;
-  const dist = Math.hypot(x2 - x1, y2 - y1);
-  return { x: x1 + dist * Math.cos(snapped), y: y1 + dist * Math.sin(snapped) };
-}
-
-// ══════════════════════════════════════════════════════
-// 18. CURSOR & STATUS
+// 15. CURSOR & STATUS
 // ══════════════════════════════════════════════════════
 
 const CURSOR_CLASSES = ['cursor-select','cursor-move','cursor-grab','cursor-grabbing', 'cursor-bucket',
@@ -1614,176 +1375,112 @@ function updateStatus() {
 }
 
 // ══════════════════════════════════════════════════════
-// 19. STORAGE & FILE I/O
+// 16. TEXT EDITING
 // ══════════════════════════════════════════════════════
 
-const LS_KEY = 'drawflow_session';
+const textCursor  = () => document.getElementById('text-cursor');
+const textInputEl = () => document.getElementById('text-input');
 
-function autoSave() {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      elements: STATE.elements.map(el => {
-        const c = { ...el }; delete c._rough; delete c._roughKey; delete c._img; return c;
-      }),
-      camera: STATE.camera, darkMode: STATE.darkMode, gridEnabled: STATE.gridEnabled,
-    }));
-  } catch(_) {}
+function beginTextEdit(el, screenPos) {
+  STATE.editingId = el.id; const tc = textCursor(); const ti = textInputEl();
+  tc.style.display = 'block'; tc.style.left = screenPos.x + 'px'; tc.style.top = screenPos.y + 'px';
+  ti.style.fontSize = (el.fontSize * STATE.camera.zoom) + 'px';
+  ti.style.color = el.strokeColor; ti.style.fontFamily = el.fontFamily; ti.value = el.text || '';
+  setTimeout(() => { ti.focus(); ti.select(); }, 10); autoResizeTextarea(ti);
+}
+function commitTextEdit() {
+  if (!STATE.editingId) return;
+  const ti = textInputEl(); const el = STATE.elements.find(e => e.id === STATE.editingId);
+  if (el) { el.text = ti.value; if (!el.text.trim()) STATE.elements = STATE.elements.filter(e => e.id !== el.id); pushHistory(); }
+  textCursor().style.display = 'none'; STATE.editingId = null; scheduleRender();
+}
+function autoResizeTextarea(ta) {
+  ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px';
+  ta.style.width  = 'auto'; ta.style.width  = Math.max(ta.scrollWidth, 100) + 'px';
 }
 
-function autoLoad() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    if (Array.isArray(data.elements)) {
-      STATE.elements = data.elements;
-      if (data.camera) STATE.camera = data.camera;
-      if (data.darkMode) setTheme(true);
-      if (data.gridEnabled) { STATE.gridEnabled = true; updateGridBtn(); }
-      STATE.history = [snapshot()]; STATE.historyIndex = 0; updateUndoRedoBtns(); scheduleRender();
+// ══════════════════════════════════════════════════════
+// 17. CANVAS EVENT BINDING (Added Multi-touch for Mobile)
+// ══════════════════════════════════════════════════════
+
+function initCanvasEvents() {
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseup',   onMouseUp);
+  canvas.addEventListener('mouseleave', e => { if (STATE.isPanning) stopPan(); });
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('dblclick', (e) => {
+    const sp = getCanvasPos(e); const wp = screenToWorld(sp.x, sp.y); const hit = findElement(wp.x, wp.y);
+    if (hit && hit.type === 'text') { selectTool('text'); STATE.selectedIds.clear(); STATE.selectedIds.add(hit.id); beginTextEdit(hit, sp); scheduleRender(); }
+  });
+
+  // Mobile multi-touch states
+  let pinchStartDist = null;
+  let pinchStartCam = null;
+
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      // 2 Fingers detected -> Initiate Pan/Zoom
+      const t1 = e.touches[0]; const t2 = e.touches[1];
+      pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      pinchStartCam = { x: STATE.camera.x, y: STATE.camera.y, zoom: STATE.camera.zoom };
+      
+      const cx = (t1.clientX + t2.clientX) / 2;
+      const cy = (t1.clientY + t2.clientY) / 2;
+      
+      const rect = canvas.getBoundingClientRect();
+      STATE.panStart = { sx: cx - rect.left, sy: cy - rect.top, cx: STATE.camera.x, cy: STATE.camera.y };
+      STATE.isPanning = true;
+    } else if (e.touches.length === 1) {
+      onMouseDown({ ...e.touches[0], button: 0, touches: e.touches, shiftKey: false, ctrlKey: false, metaKey: false });
     }
-  } catch(_) {}
-}
+  }, { passive: false });
 
-function saveJSON() {
-  const data = {
-    version: '1.0',
-    elements: STATE.elements.map(el => { const c = { ...el }; delete c._rough; delete c._roughKey; delete c._img; return c; }),
-    camera: STATE.camera,
-  };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  downloadBlob(blob, 'xyronix-' + Date.now() + '.json');
-}
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 2 && pinchStartDist) {
+      // Handle Pinch & Pan
+      const t1 = e.touches[0]; const t2 = e.touches[1];
+      const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const zoomFactor = currentDist / pinchStartDist;
 
-function loadJSON() { document.getElementById('file-input').click(); }
+      const rect = canvas.getBoundingClientRect();
+      const cx = (t1.clientX + t2.clientX) / 2;
+      const cy = (t1.clientY + t2.clientY) / 2;
+      const spX = cx - rect.left;
+      const spY = cy - rect.top;
 
-function onFileLoad(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+      // Pan amount
+      const dx = spX - STATE.panStart.sx;
+      const dy = spY - STATE.panStart.sy;
 
-  if (file.type.startsWith('image/')) {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
-        const wp = screenToWorld(canvas.clientWidth / 2, canvas.clientHeight / 2);
-        STATE.elements.push(makeImage(wp.x - img.width / 2, wp.y - img.height / 2, img.width, img.height, ev.target.result));
-        pushHistory(); scheduleRender();
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  } else {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (Array.isArray(data.elements)) {
-          STATE.elements = data.elements;
-          if (data.camera) STATE.camera = data.camera;
-          pushHistory(); scheduleRender();
-        }
-      } catch(err) { alert('Could not parse file: ' + err.message); }
-    };
-    reader.readAsText(file);
-  }
-  e.target.value = '';
-}
+      // Zoom + Pan applied cleanly together
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinchStartCam.zoom * zoomFactor));
+      const ratio = newZoom / pinchStartCam.zoom;
+      
+      STATE.camera.zoom = newZoom;
+      STATE.camera.x = spX - ratio * (spX - pinchStartCam.x) + dx;
+      STATE.camera.y = spY - ratio * (spY - pinchStartCam.y) + dy;
+      
+      scheduleRender();
+    } else if (e.touches.length === 1) {
+      onMouseMove({ ...e.touches[0], touches: e.touches, shiftKey: false });
+    }
+  }, { passive: false });
 
-function exportPNG() {
-  const bounds = getExportBounds();
-  if (!bounds) { alert('Nothing to export!'); return; }
-
-  const pad = 40; const W = bounds.width + pad * 2; const H = bounds.height + pad * 2;
-  const offscreen = document.createElement('canvas'); offscreen.width = W; offscreen.height = H;
-  const octx = offscreen.getContext('2d');
-
-  octx.fillStyle = STATE.darkMode ? '#13151f' : '#faf8f4'; octx.fillRect(0, 0, W, H);
-  octx.translate(pad - bounds.x, pad - bounds.y);
-
-  const savedCtx = ctx; ctx = octx;
-  for (const el of STATE.elements) drawElement(el, false);
-  ctx = savedCtx;
-
-  offscreen.toBlob(blob => downloadBlob(blob, 'xyronix-' + Date.now() + '.png'));
-}
-
-function getExportBounds() {
-  if (!STATE.elements.length) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const el of STATE.elements) {
-    const b = getBounds(el);
-    if (b.x < minX) minX = b.x; if (b.y < minY) minY = b.y;
-    if (b.x + b.width > maxX) maxX = b.x + b.width; if (b.y + b.height > maxY) maxY = b.y + b.height;
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
-function downloadBlob(blob, name) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = name;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (e.touches.length < 2) {
+      pinchStartDist = null; pinchStartCam = null; STATE.isPanning = false;
+    }
+    if (e.touches.length === 0) onMouseUp({ button: 0 });
+  }, { passive: false });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 // ══════════════════════════════════════════════════════
-// 20. LAYER OPERATIONS
-// ══════════════════════════════════════════════════════
-
-function bringToFront() {
-  if (!STATE.selectedIds.size) return;
-  const ids = [...STATE.selectedIds];
-  const nonSelected = STATE.elements.filter(e => !ids.includes(e.id));
-  const selected = STATE.elements.filter(e => ids.includes(e.id));
-  STATE.elements = [...nonSelected, ...selected];
-  pushHistory(); scheduleRender();
-}
-
-function sendToBack() {
-  if (!STATE.selectedIds.size) return;
-  const ids = [...STATE.selectedIds];
-  const nonSelected = STATE.elements.filter(e => !ids.includes(e.id));
-  const selected = STATE.elements.filter(e => ids.includes(e.id));
-  STATE.elements = [...selected, ...nonSelected];
-  pushHistory(); scheduleRender();
-}
-
-function deleteSelected() {
-  if (!STATE.selectedIds.size) return;
-  STATE.elements = STATE.elements.filter(e => !STATE.selectedIds.has(e.id));
-  STATE.selectedIds.clear(); pushHistory(); scheduleRender();
-}
-
-// ══════════════════════════════════════════════════════
-// 21. THEME & GRID
-// ══════════════════════════════════════════════════════
-
-function setTheme(dark) {
-  STATE.darkMode = dark;
-  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  document.getElementById('icon-moon').style.display = dark ? 'none' : '';
-  document.getElementById('icon-sun').style.display = dark ? '' : 'none';
-
-  if (STATE.strokeColor === '#1a1a2e' && dark) STATE.strokeColor = '#e8eaf6';
-  if (STATE.strokeColor === '#e8eaf6' && !dark) STATE.strokeColor = '#1a1a2e';
-
-  scheduleRender(); autoSave();
-}
-
-function toggleTheme() { setTheme(!STATE.darkMode); }
-
-function toggleGrid() {
-  STATE.gridEnabled = !STATE.gridEnabled;
-  updateGridBtn(); scheduleRender(); autoSave();
-}
-
-function updateGridBtn() {
-  const btn = document.getElementById('btn-grid');
-  btn.style.background = STATE.gridEnabled ? 'rgba(91,108,249,0.12)' : '';
-  btn.style.color = STATE.gridEnabled ? 'var(--accent)' : '';
-}
-
-// ══════════════════════════════════════════════════════
-// 22. UI EVENT BINDING
+// 18. UI EVENT BINDING
 // ══════════════════════════════════════════════════════
 
 function initUI() {
@@ -1793,21 +1490,35 @@ function initUI() {
 
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
-
   document.getElementById('btn-clear').addEventListener('click', () => {
-    // Completely clear using standard confirm dialog for reliability
     if (window.confirm("Are you sure you want to clear the entire canvas? This cannot be undone.")) {
-      STATE.elements = [];
-      STATE.selectedIds.clear();
-      STATE.history = [];
-      STATE.historyIndex = -1;
-      pushHistory();
-      scheduleRender();
+      STATE.elements = []; STATE.selectedIds.clear(); STATE.history = []; STATE.historyIndex = -1;
+      pushHistory(); scheduleRender();
     }
   });
 
-  document.getElementById('btn-theme').addEventListener('click', toggleTheme);
-  document.getElementById('btn-grid' ).addEventListener('click', toggleGrid);
+  // Mobile drawer toggle
+  document.getElementById('btn-mobile-panel').addEventListener('click', () => {
+    document.getElementById('props-panel').classList.toggle('open');
+  });
+
+  document.getElementById('btn-theme').addEventListener('click', () => {
+    STATE.darkMode = !STATE.darkMode;
+    document.documentElement.setAttribute('data-theme', STATE.darkMode ? 'dark' : 'light');
+    document.getElementById('icon-moon').style.display = STATE.darkMode ? 'none' : '';
+    document.getElementById('icon-sun').style.display = STATE.darkMode ? '' : 'none';
+    if (STATE.strokeColor === '#1a1a2e' && STATE.darkMode) STATE.strokeColor = '#e8eaf6';
+    if (STATE.strokeColor === '#e8eaf6' && !STATE.darkMode) STATE.strokeColor = '#1a1a2e';
+    scheduleRender(); autoSave();
+  });
+
+  document.getElementById('btn-grid' ).addEventListener('click', () => {
+    STATE.gridEnabled = !STATE.gridEnabled;
+    const btn = document.getElementById('btn-grid');
+    btn.style.background = STATE.gridEnabled ? 'rgba(91,108,249,0.12)' : '';
+    btn.style.color = STATE.gridEnabled ? 'var(--accent)' : '';
+    scheduleRender(); autoSave();
+  });
 
   document.getElementById('btn-save'  ).addEventListener('click', saveJSON);
   document.getElementById('btn-load'  ).addEventListener('click', loadJSON);
@@ -1827,7 +1538,6 @@ function initUI() {
       STATE.strokeColor = swatch.dataset.color; setActiveStrokeSwatch(swatch); applyToSelected('strokeColor', STATE.strokeColor);
     });
   });
-
   document.getElementById('stroke-color-input').addEventListener('input', e => {
     STATE.strokeColor = e.target.value; setActiveStrokeSwatch(document.getElementById('stroke-custom')); applyToSelected('strokeColor', STATE.strokeColor);
   });
@@ -1837,7 +1547,6 @@ function initUI() {
       STATE.fillColor = swatch.dataset.color; setActiveFillSwatch(swatch); applyToSelected('fillColor', STATE.fillColor);
     });
   });
-
   document.getElementById('fill-color-input').addEventListener('input', e => {
     STATE.fillColor = e.target.value; setActiveFillSwatch(document.getElementById('fill-custom')); applyToSelected('fillColor', STATE.fillColor);
   });
@@ -1867,10 +1576,7 @@ function initUI() {
   const ti = textInputEl();
   ti.addEventListener('input', () => {
     autoResizeTextarea(ti);
-    if (STATE.editingId) {
-      const el = STATE.elements.find(e => e.id === STATE.editingId);
-      if (el) { el.text = ti.value; scheduleRender(); }
-    }
+    if (STATE.editingId) { const el = STATE.elements.find(e => e.id === STATE.editingId); if (el) { el.text = ti.value; scheduleRender(); } }
   });
   ti.addEventListener('blur', () => setTimeout(commitTextEdit, 100));
   ti.addEventListener('keydown', e => { if (e.key === 'Escape') commitTextEdit(); e.stopPropagation(); });
@@ -1885,12 +1591,8 @@ function selectTool(tool) {
   scheduleRender();
 }
 
-function setActiveStrokeSwatch(active) {
-  document.querySelectorAll('#stroke-swatches .swatch').forEach(s => s.classList.remove('active')); active.classList.add('active'); scheduleRender();
-}
-function setActiveFillSwatch(active) {
-  document.querySelectorAll('#fill-swatches .swatch').forEach(s => s.classList.remove('active')); active.classList.add('active'); scheduleRender();
-}
+function setActiveStrokeSwatch(active) { document.querySelectorAll('#stroke-swatches .swatch').forEach(s => s.classList.remove('active')); active.classList.add('active'); scheduleRender(); }
+function setActiveFillSwatch(active) { document.querySelectorAll('#fill-swatches .swatch').forEach(s => s.classList.remove('active')); active.classList.add('active'); scheduleRender(); }
 
 function applyToSelected(prop, value, invalidateRough = false) {
   if (!STATE.selectedIds.size) { scheduleRender(); return; }
@@ -1901,23 +1603,82 @@ function applyToSelected(prop, value, invalidateRough = false) {
   pushHistory(); scheduleRender();
 }
 
+function snapToGrid(v) { return Math.round(v / STATE.gridSize) * STATE.gridSize; }
+function snapAngle(x1, y1, x2, y2) {
+  const angle = Math.atan2(y2 - y1, x2 - x1); const snap = Math.PI / 4; const snapped = Math.round(angle / snap) * snap;
+  const dist = Math.hypot(x2 - x1, y2 - y1); return { x: x1 + dist * Math.cos(snapped), y: y1 + dist * Math.sin(snapped) };
+}
+
 // ══════════════════════════════════════════════════════
-// 24. KEYBOARD SHORTCUTS
+// 19. STORAGE & FILE I/O
+// ══════════════════════════════════════════════════════
+const LS_KEY = 'XYRONIX_session';
+function autoSave() { try { localStorage.setItem(LS_KEY, JSON.stringify({ elements: STATE.elements.map(el => { const c = { ...el }; delete c._rough; delete c._roughKey; delete c._img; return c; }), camera: STATE.camera, darkMode: STATE.darkMode, gridEnabled: STATE.gridEnabled })); } catch(_) {} }
+function autoLoad() {
+  try {
+    const raw = localStorage.getItem(LS_KEY); if (!raw) return; const data = JSON.parse(raw);
+    if (Array.isArray(data.elements)) {
+      STATE.elements = data.elements; if (data.camera) STATE.camera = data.camera;
+      if (data.darkMode) { STATE.darkMode = true; document.documentElement.setAttribute('data-theme', 'dark'); document.getElementById('icon-moon').style.display = 'none'; document.getElementById('icon-sun').style.display = ''; }
+      if (data.gridEnabled) { STATE.gridEnabled = true; const btn = document.getElementById('btn-grid'); btn.style.background = 'rgba(91,108,249,0.12)'; btn.style.color = 'var(--accent)'; }
+      STATE.history = [snapshot()]; STATE.historyIndex = 0; updateUndoRedoBtns(); scheduleRender();
+    }
+  } catch(_) {}
+}
+function saveJSON() {
+  const data = { version: '1.0', elements: STATE.elements.map(el => { const c = { ...el }; delete c._rough; delete c._roughKey; delete c._img; return c; }), camera: STATE.camera };
+  downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'XYRONIX-' + Date.now() + '.json');
+}
+function loadJSON() { document.getElementById('file-input').click(); }
+function onFileLoad(e) {
+  const file = e.target.files[0]; if (!file) return;
+  if (file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => { const wp = screenToWorld(canvas.clientWidth / 2, canvas.clientHeight / 2); STATE.elements.push(makeImage(wp.x - img.width / 2, wp.y - img.height / 2, img.width, img.height, ev.target.result)); pushHistory(); scheduleRender(); };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = ev => { try { const data = JSON.parse(ev.target.result); if (Array.isArray(data.elements)) { STATE.elements = data.elements; if (data.camera) STATE.camera = data.camera; pushHistory(); scheduleRender(); } } catch(err) { alert('Could not parse file: ' + err.message); } };
+    reader.readAsText(file);
+  }
+  e.target.value = '';
+}
+function exportPNG() {
+  if (!STATE.elements.length) { alert('Nothing to export!'); return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const el of STATE.elements) { const b = getBounds(el); if (b.x < minX) minX = b.x; if (b.y < minY) minY = b.y; if (b.x + b.width > maxX) maxX = b.x + b.width; if (b.y + b.height > maxY) maxY = b.y + b.height; }
+  const pad = 40; const W = (maxX - minX) + pad * 2; const H = (maxY - minY) + pad * 2;
+  const offscreen = document.createElement('canvas'); offscreen.width = W; offscreen.height = H; const octx = offscreen.getContext('2d');
+  octx.fillStyle = STATE.darkMode ? '#13151f' : '#faf8f4'; octx.fillRect(0, 0, W, H); octx.translate(pad - minX, pad - minY);
+  const savedCtx = ctx; ctx = octx; for (const el of STATE.elements) drawElement(el, false); ctx = savedCtx;
+  offscreen.toBlob(blob => downloadBlob(blob, 'XYRONIX-' + Date.now() + '.png'));
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function bringToFront() { if (!STATE.selectedIds.size) return; const ids = [...STATE.selectedIds]; const nonSelected = STATE.elements.filter(e => !ids.includes(e.id)); const selected = STATE.elements.filter(e => ids.includes(e.id)); STATE.elements = [...nonSelected, ...selected]; pushHistory(); scheduleRender(); }
+function sendToBack() { if (!STATE.selectedIds.size) return; const ids = [...STATE.selectedIds]; const nonSelected = STATE.elements.filter(e => !ids.includes(e.id)); const selected = STATE.elements.filter(e => ids.includes(e.id)); STATE.elements = [...selected, ...nonSelected]; pushHistory(); scheduleRender(); }
+function deleteSelected() { if (!STATE.selectedIds.size) return; STATE.elements = STATE.elements.filter(e => !STATE.selectedIds.has(e.id)); STATE.selectedIds.clear(); pushHistory(); scheduleRender(); }
+
+// ══════════════════════════════════════════════════════
+// 20. KEYBOARD SHORTCUTS
 // ══════════════════════════════════════════════════════
 
 function initKeyboard() {
   document.addEventListener('keydown', e => {
-    const tag = document.activeElement.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') return;
-
+    const tag = document.activeElement.tagName.toLowerCase(); if (tag === 'input' || tag === 'textarea') return;
     const ctrl = e.ctrlKey || e.metaKey;
-
     if (ctrl && e.key === 'z') { e.preventDefault(); undo(); return; }
     if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); return; }
     if (ctrl && e.key === 's') { e.preventDefault(); saveJSON(); return; }
     if (ctrl && e.key === 'e') { e.preventDefault(); exportPNG(); return; }
-    if (ctrl && e.key === 'a') { e.preventDefault(); selectAll(); return; }
-
+    if (ctrl && e.key === 'a') { e.preventDefault(); STATE.selectedIds = new Set(STATE.elements.map(e => e.id)); scheduleRender(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
     if (e.key === ' ') { e.preventDefault(); STATE.spaceDown = true; setCursor('grab'); return; }
     if (e.key === 'Escape') { commitTextEdit(); STATE.selectedIds.clear(); STATE.currentEl = null; STATE.isDrawing = false; scheduleRender(); return; }
@@ -1925,75 +1686,33 @@ function initKeyboard() {
     const toolKeys = { v: 'select', p: 'pencil', r: 'rect', c: 'circle', l: 'line', a: 'arrow', t: 'text', e: 'eraser', f: 'bucket' };
     if (!ctrl && toolKeys[e.key.toLowerCase()]) selectTool(toolKeys[e.key.toLowerCase()]);
 
-    if (e.key.toLowerCase() === 'g') toggleGrid();
-    if (e.key.toLowerCase() === 'd') toggleTheme();
-
     if (e.key === '+' || e.key === '=') zoomAt(canvas.clientWidth/2, canvas.clientHeight/2, 1.25);
     if (e.key === '-') zoomAt(canvas.clientWidth/2, canvas.clientHeight/2, 0.8);
     if (e.key === '0') setZoom(1);
 
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
-      nudgeSelected(e.key, e.shiftKey ? 10 : 1); e.preventDefault();
+      if (!STATE.selectedIds.size) return;
+      const amount = e.shiftKey ? 10 : 1; const dx = e.key === 'ArrowLeft' ? -amount : e.key === 'ArrowRight' ? amount : 0; const dy = e.key === 'ArrowUp' ? -amount : e.key === 'ArrowDown' ? amount : 0;
+      for (const id of STATE.selectedIds) {
+        const el = STATE.elements.find(e => e.id === id); if (!el) continue;
+        if ('x' in el) { el.x += dx; el.y += dy; }
+        if ('x1' in el) { el.x1 += dx; el.y1 += dy; el.x2 += dx; el.y2 += dy; }
+        if (el.type === 'pencil') el.points = el.points.map(([px,py]) => [px+dx, py+dy]);
+        delete el._rough; delete el._roughKey;
+      }
+      pushHistory(); scheduleRender(); e.preventDefault();
     }
   });
-
   document.addEventListener('keyup', e => { if (e.key === ' ') { STATE.spaceDown = false; setCursor(null); } });
 }
 
-function selectAll() { STATE.selectedIds = new Set(STATE.elements.map(e => e.id)); scheduleRender(); }
-
-function nudgeSelected(key, amount) {
-  if (!STATE.selectedIds.size) return;
-  const dx = key === 'ArrowLeft' ? -amount : key === 'ArrowRight' ? amount : 0;
-  const dy = key === 'ArrowUp'   ? -amount : key === 'ArrowDown'  ? amount : 0;
-  for (const id of STATE.selectedIds) {
-    const el = STATE.elements.find(e => e.id === id);
-    if (!el) continue;
-    if ('x' in el)  { el.x  += dx; el.y  += dy; }
-    if ('x1' in el) { el.x1 += dx; el.y1 += dy; el.x2 += dx; el.y2 += dy; }
-    if (el.type === 'pencil') el.points = el.points.map(([px,py]) => [px+dx, py+dy]);
-    delete el._rough; delete el._roughKey;
-  }
-  pushHistory(); scheduleRender();
-}
-
 // ══════════════════════════════════════════════════════
-// 25. CANVAS EVENT BINDING
-// ══════════════════════════════════════════════════════
-
-function initCanvasEvents() {
-  canvas.addEventListener('mousedown', onMouseDown);
-  canvas.addEventListener('mousemove', onMouseMove);
-  canvas.addEventListener('mouseup',   onMouseUp);
-  canvas.addEventListener('mouseleave', e => { if (STATE.isPanning) stopPan(); });
-  canvas.addEventListener('wheel', onWheel, { passive: false });
-  canvas.addEventListener('dblclick', onDblClick);
-
-  canvas.addEventListener('touchstart', e => { e.preventDefault(); onMouseDown({ ...e.touches[0], button: 0, touches: e.touches, shiftKey: false, ctrlKey: false, metaKey: false }); }, { passive: false });
-  canvas.addEventListener('touchmove', e => { e.preventDefault(); onMouseMove({ ...e.touches[0], touches: e.touches, shiftKey: false }); }, { passive: false });
-  canvas.addEventListener('touchend', e => { e.preventDefault(); onMouseUp({ button: 0 }); }, { passive: false });
-  canvas.addEventListener('contextmenu', e => e.preventDefault());
-}
-
-function onDblClick(e) {
-  const sp = getCanvasPos(e);
-  const wp = screenToWorld(sp.x, sp.y);
-  const hit = findElement(wp.x, wp.y);
-  if (hit && hit.type === 'text') {
-    selectTool('text'); STATE.selectedIds.clear(); STATE.selectedIds.add(hit.id);
-    beginTextEdit(hit, sp); scheduleRender();
-  }
-}
-
-// ══════════════════════════════════════════════════════
-// 26. INITIALIZATION
+// 21. INITIALIZATION
 // ══════════════════════════════════════════════════════
 
 function init() {
   initCanvas(); initUI(); initKeyboard(); initCanvasEvents();
-  STATE.history = [snapshot()]; STATE.historyIndex = 0; updateUndoRedoBtns();
-  autoLoad();
-  scheduleRender();
+  STATE.history = [snapshot()]; STATE.historyIndex = 0; updateUndoRedoBtns(); autoLoad(); scheduleRender();
 }
 
 document.addEventListener('DOMContentLoaded', init);
