@@ -1,6 +1,6 @@
 # 🌌 X Y R O N I X
 **`// NEURAL CONCEPTUALIZATION MATRIX // v1.0.0 //`**
-[![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fmohitscodiclab%2Fxyronix&count_bg=%235B6CF9&title_bg=%231A1A2E&icon=&icon_color=%23E7E7E7&title=SYSTEM+HITS&edge_flat=true)](https://hits.seeyoufarm.com)
+![System Hits](https://komarev.com/ghpvc/?username=mohitscodiclab-xyronix&label=SYSTEM+HITS&color=5b6cf9&style=flat-square)
 
 > *"Pure, decentralized creation space. Infinite boundaries. Zero latency."*
 
