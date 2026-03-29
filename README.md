@@ -8,12 +8,16 @@
 
 ---
 
-### 🚀 [ LIVE DEPLOYMENT: ESTABLISH UPLINK ]
+### 🚀 LIVE DEPLOYMENT: ESTABLISH UPLINK 
 
 XYRONIX requires zero installation, zero server configurations, and zero package managers. It is hosted directly on the global grid via GitHub Pages.
 
 **🔗 [Access the XYRONIX Interface Here](https://mohitscodiclab.github.io/XYRONIX)**
+---
+### THE UI
+<img width="1920" height="1080" alt="Screenshot 2026-03-29 172224" src="https://github.com/user-attachments/assets/c2533e16-c2a5-4d4d-8f4c-ee20dbf59037" />
 
+---
 **To Engage Systems:**
 1.  **Initialize:** Click the uplink above to open the matrix in your preferred web terminal (Chrome, Firefox, Edge, Safari).
 2.  **Deploy Tools:** * Use the **Top Toolbar** to drop basic geometry, free-hand vectors (Pencil), text nodes, and spatial links (Arrows).
@@ -22,7 +26,7 @@ XYRONIX requires zero installation, zero server configurations, and zero package
 
 ---
 
-### ⚙️ [ CORE SYSTEMS: HOW IT WORKS ]
+### ⚙️ CORE SYSTEMS: HOW IT WORKS 
 
 XYRONIX runs on a lightweight, dependency-free architecture. It leverages raw web technologies to deliver a high-performance workspace:
 
@@ -33,7 +37,7 @@ XYRONIX runs on a lightweight, dependency-free architecture. It leverages raw we
 
 ---
 
-### 🎯 [ OPERATIONAL SECTORS: WHERE TO USE ]
+### 🎯  OPERATIONAL SECTORS: WHERE TO USE 
 
 XYRONIX is versatile and can be deployed across multiple technical and creative disciplines:
 
@@ -45,7 +49,7 @@ XYRONIX is versatile and can be deployed across multiple technical and creative 
 
 ---
 
-### 👨‍💻 [ PRIMARY ARCHITECT: MOHITSCODICLAB ]
+### 👨‍💻 PRIMARY ARCHITECT: MOHITSCODICLAB 
 
 **System Designation:** Mohit
 **Directives:** Web Development, Data Science, Network Security, Python Engineering.
